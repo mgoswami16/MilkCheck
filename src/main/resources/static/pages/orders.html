@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My orders | MilkCheck</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="site-header"></div>
+
+  <main id="main" class="container">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/index.html">Home</a><span class="sep">/</span><span>Orders</span>
+    </nav>
+    <div class="page-head"><h1>My orders</h1><p>Track and manage your purchases.</p></div>
+
+    <div class="alert alert-success" id="placedBanner" role="status" hidden></div>
+    <div class="order-list" id="list"></div>
+    <div style="text-align:center;padding-bottom:56px">
+      <button class="btn btn-outline" id="moreBtn" hidden>Load more orders</button>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { $, getParam, escapeHtml, formatPrice, formatDate, formatDateTime, setLoading, showError, toast } from '/js/ui.js';
+    import { orderApi } from '/js/api.js';
+    import { isLoggedIn, redirectToLogin } from '/js/auth.js';
+
+    const PAGE_SIZE = 10;
+    const STEPS = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED'];
+    const CANCELLABLE = new Set(['PENDING', 'CONFIRMED']);
+    const PAY = { COD: 'Cash on delivery', CARD: 'Card', UPI: 'UPI' };
+    const label = (s) => String(s || '').charAt(0) + String(s || '').slice(1).toLowerCase();
+
+    const listEl = $('#list'), moreBtn = $('#moreBtn');
+    let page = 0, loading = false;
+
+    function orderHtml(o, open) {
+      const status = String(o.status || 'PENDING').toUpperCase();
+      const items = o.items ?? [];
+      const total = o.totalAmount ?? o.total ?? 0;
+      const created = o.createdAt ?? o.orderDate;
+      const idx = STEPS.indexOf(status);
+      const timeline = status === 'CANCELLED' ? '' : `
+        <div class="timeline" aria-label="Order progress">
+          ${STEPS.map((s, i) => `<div class="tl-step ${i <= idx ? 'done' : ''}">${label(s)}</div>`).join('')}
+        </div>`;
+      const payMethod = o.paymentMethod ?? o.payment?.method;
+      const payStatus = o.paymentStatus ?? o.payment?.status;
+
+      return `
+      <details class="order-card fade-up" ${open ? 'open' : ''}>
+        <summary>
+          <div class="order-id">Order #${escapeHtml(o.orderNumber ?? o.id)}
+            <span class="order-date">${created ? formatDateTime(created) : ''}</span></div>
+          <div>${items.length} item${items.length === 1 ? '' : 's'}</div>
+          <div class="order-total">${formatPrice(total)}</div>
+          <span class="status status-${status.toLowerCase()}">${label(status)}</span>
+        </summary>
+        <div class="order-body">
+          ${timeline}
+          <div class="order-items">
+            ${items.map(i => {
+              const qty = Number(i.quantity ?? 1);
+              const price = Number(i.price ?? i.unitPrice ?? 0);
+              const sub = Number(i.subtotal ?? i.lineTotal ?? price * qty);
+              return `<div class="order-line"><div>${escapeHtml(i.productName ?? i.name ?? 'Product')} <span>× ${qty}</span></div><b>${formatPrice(sub)}</b></div>`;
+            }).join('')}
+          </div>
+          <div class="order-meta">
+            <div><b>Delivery address</b>${escapeHtml(o.shippingAddress ?? o.address ?? '—')}</div>
+            <div><b>Payment</b>${escapeHtml(PAY[payMethod] ?? payMethod ?? '—')}${payStatus ? ` · ${escapeHtml(label(payStatus))}` : ''}</div>
+          </div>
+          ${CANCELLABLE.has(status) ? `<div class="order-actions"><button class="btn btn-danger btn-sm" data-cancel="${Number(o.id)}">Cancel order</button></div>` : ''}
+        </div>
+      </details>`;
+    }
+
+    function confirmCancel() {
+      return new Promise((resolve) => {
+        const bd = document.createElement('div');
+        bd.className = 'modal-backdrop';
+        bd.innerHTML = `
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cm-title">
+            <h3 id="cm-title">Cancel this order?</h3>
+            <p>Items will return to stock and any payment will be refunded.</p>
+            <div class="modal-actions">
+              <button class="btn btn-ghost" data-r="0">Keep order</button>
+              <button class="btn btn-danger" data-r="1">Cancel order</button>
+            </div>
+          </div>`;
+        document.body.appendChild(bd);
+        requestAnimationFrame(() => bd.classList.add('show'));
+        const done = (v) => {
+          document.removeEventListener('keydown', onKey);
+          bd.classList.remove('show');
+          setTimeout(() => bd.remove(), 200);
+          resolve(v);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') done(false); };
+        document.addEventListener('keydown', onKey);
+        bd.addEventListener('click', (e) => {
+          if (e.target === bd) return done(false);
+          const b = e.target.closest('[data-r]');
+          if (b) done(b.dataset.r === '1');
+        });
+        bd.querySelector('[data-r="0"]').focus();
+      });
+    }
+
+    async function load(reset = false) {
+      if (loading) return;
+      loading = true;
+      if (reset) { page = 0; listEl.innerHTML = ''; }
+      setLoading(moreBtn, true);
+      try {
+        const res = await orderApi.list({ page, size: PAGE_SIZE });
+        const items = Array.isArray(res) ? res : (res.content ?? []);
+        const placed = getParam('placed');
+
+        if (page === 0 && !items.length) {
+          listEl.innerHTML = `<div class="empty-state"><h3>No orders yet</h3>
+            <p>When you place an order, it will show up here.</p>
+            <a class="btn btn-primary" href="/pages/products.html">Start shopping</a></div>`;
+          moreBtn.hidden = true;
+          return;
+        }
+        listEl.insertAdjacentHTML('beforeend',
+          items.map(o => orderHtml(o, placed && String(o.id) === placed)).join(''));
+
+        const totalPages = Array.isArray(res) ? 1 : (res.totalPages ?? 1);
+        page += 1;
+        moreBtn.hidden = page >= totalPages;
+      } catch (err) {
+        if (page === 0) {
+          listEl.innerHTML = `<div class="empty-state"><h3>Couldn't load your orders</h3>
+            <button class="btn btn-outline btn-sm" onclick="location.reload()">Try again</button></div>`;
+        } else showError(err);
+      } finally {
+        loading = false;
+        setLoading(moreBtn, false);
+      }
+    }
+
+    listEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-cancel]');
+      if (!btn) return;
+      if (!(await confirmCancel())) return;
+      setLoading(btn, true);
+      try {
+        await orderApi.cancel(btn.dataset.cancel);
+        toast('Order cancelled', 'success');
+        load(true);
+      } catch (err) {
+        setLoading(btn, false);
+        showError(err);
+      }
+    });
+    moreBtn.addEventListener('click', () => load());
+
+    (() => {
+      if (!isLoggedIn()) return redirectToLogin('Please log in to view your orders.');
+      const placed = getParam('placed');
+      if (placed) {
+        const b = $('#placedBanner');
+        b.textContent = 'Thank you! Your order has been placed.';
+        b.hidden = false;
+      }
+      load(true);
+    })();
+  </script>
+</body>
+</html>

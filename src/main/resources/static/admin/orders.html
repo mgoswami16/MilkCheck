@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Orders | MilkCheck Admin</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin">
+  <div class="admin-shell">
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
+    <div class="admin-main">
+      <header class="admin-top" id="adminTop"></header>
+      <main class="admin-content" id="main">
+        <div class="admin-toolbar">
+          <select class="input" id="fStatus" aria-label="Filter by status">
+            <option value="">All statuses</option>
+          </select>
+        </div>
+        <p class="admin-meta" id="meta" aria-live="polite"></p>
+        <section class="panel">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Order</th><th>Customer</th><th>Date</th><th class="num">Items</th><th class="num">Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </section>
+        <nav class="pagination" id="pager" aria-label="Pagination"></nav>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="orderModal">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="Order details">
+      <div id="orderBody"></div>
+      <div class="modal-actions"><button class="btn btn-ghost" data-close>Close</button></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { $, getParam, escapeHtml, formatPrice, formatDateTime, setLoading, showError, toast } from '/js/ui.js';
+    import { adminApi } from '/js/api.js';
+    import { initAdmin, confirmDialog, showModal, hideModal, renderPager, bindPager, statusBadge, label, orderCustomer, orderTotal, orderRef } from '/js/admin-kit.js';
+
+    const SIZE = 10;
+    const STATUSES = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'];
+    // Mirrors the server's transition map; the server stays authoritative.
+    const NEXT = {
+      PENDING: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['PROCESSING', 'CANCELLED'],
+      PROCESSING: ['SHIPPED', 'CANCELLED'],
+      SHIPPED: ['DELIVERED'],
+      DELIVERED: [],
+      CANCELLED: [],
+    };
+    const PAY = { COD: 'Cash on delivery', CARD: 'Card', UPI: 'UPI' };
+
+    const state = { status: '', page: 0 };
+    let items = [], reqId = 0, current = null;
+
+    const rowsEl = $('#rows'), metaEl = $('#meta'), pagerEl = $('#pager');
+    const modal = $('#orderModal'), body = $('#orderBody');
+
+    $('#fStatus').insertAdjacentHTML('beforeend',
+      STATUSES.map(s => `<option value="${s}">${label(s)}</option>`).join(''));
+
+    const dateOf = (o) => o.createdAt ?? o.orderDate;
+    const payOf = (o) => {
+      const m = o.paymentMethod ?? o.payment?.method;
+      return PAY[m] ?? m ?? '—';
+    };
+    const payStatusOf = (o) => o.paymentStatus ?? o.payment?.status;
+
+    function rowHtml(o) {
+      return `
+      <tr data-id="${Number(o.id)}">
+        <td><button class="link-btn" data-act="view">#${escapeHtml(orderRef(o))}</button></td>
+        <td>${escapeHtml(orderCustomer(o))}</td>
+        <td>${dateOf(o) ? formatDateTime(dateOf(o)) : '—'}</td>
+        <td class="num">${(o.items ?? []).length || (o.itemCount ?? '—')}</td>
+        <td class="num">${formatPrice(orderTotal(o))}</td>
+        <td>${escapeHtml(payOf(o))}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td class="row-actions"><button class="btn btn-outline btn-sm" data-act="view">View</button></td>
+      </tr>`;
+    }
+
+    async function load() {
+      const my = ++reqId;
+      rowsEl.innerHTML = `<tr><td colspan="8"><div class="skeleton" style="height:22px;margin:8px 0"></div><div class="skeleton" style="height:22px;margin:8px 0"></div><div class="skeleton" style="height:22px;margin:8px 0"></div></td></tr>`;
+      pagerEl.innerHTML = '';
+      try {
+        const q = { page: state.page, size: SIZE };
+        if (state.status) q.status = state.status;
+        const res = await adminApi.orders(q);
+        if (my !== reqId) return;
+
+        items = res.content ?? [];
+        if (!items.length && state.page > 0) { state.page -= 1; return load(); }
+
+        const total = res.totalElements ?? items.length;
+        metaEl.textContent = total === 1 ? '1 order' : `${total} orders`;
+        if (!items.length) {
+          rowsEl.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="margin:20px"><h3>No orders found</h3></div></td></tr>`;
+          return;
+        }
+        rowsEl.innerHTML = items.map(rowHtml).join('');
+        renderPager(pagerEl, res.page ?? state.page, res.totalPages);
+      } catch (err) {
+        if (my !== reqId) return;
+        metaEl.textContent = '';
+        rowsEl.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="margin:20px"><h3>Couldn't load orders</h3>
+          <p>${escapeHtml(err?.message || 'Please try again.')}</p>
+          <button class="btn btn-outline btn-sm" id="retry">Try again</button></div></td></tr>`;
+        $('#retry').addEventListener('click', load);
+      }
+    }
+
+    /* ---------- Detail modal ---------- */
+    function renderDetail(o) {
+      current = o;
+      const status = String(o.status || 'PENDING').toUpperCase();
+      const next = NEXT[status] ?? [];
+      const lines = (o.items ?? []).map(i => {
+        const qty = Number(i.quantity ?? 1);
+        const price = Number(i.price ?? i.unitPrice ?? 0);
+        const sub = Number(i.subtotal ?? i.lineTotal ?? price * qty);
+        return `<div class="order-line"><div>${escapeHtml(i.productName ?? i.name ?? 'Product')} <span>× ${qty} @ ${formatPrice(price)}</span></div><b>${formatPrice(sub)}</b></div>`;
+      }).join('');
+      const email = o.customerEmail ?? o.userEmail ?? o.user?.email;
+      const payStatus = payStatusOf(o);
+
+      body.innerHTML = `
+        <div class="detail-head">
+          <div><h3>Order #${escapeHtml(orderRef(o))}</h3><span class="d">${dateOf(o) ? formatDateTime(dateOf(o)) : ''}</span></div>
+          ${statusBadge(status)}
+        </div>
+        <div class="detail-grid">
+          <div><b>Customer</b>${escapeHtml(orderCustomer(o))}${email ? `<br>${escapeHtml(email)}` : ''}</div>
+          <div><b>Phone</b>${escapeHtml(o.phone ?? o.customerPhone ?? '—')}</div>
+          <div><b>Delivery address</b>${escapeHtml(o.shippingAddress ?? o.address ?? '—')}</div>
+          <div><b>Payment</b>${escapeHtml(payOf(o))}${payStatus ? ` · ${escapeHtml(label(payStatus))}` : ''}</div>
+          ${o.notes ? `<div style="grid-column:1/-1"><b>Notes</b>${escapeHtml(o.notes)}</div>` : ''}
+        </div>
+        <div class="order-items">${lines || '<p class="muted">No item details available.</p>'}</div>
+        <div class="detail-total"><span>Total</span><span>${formatPrice(orderTotal(o))}</span></div>
+        ${next.length ? `
+          <div class="status-update">
+            <label for="nextStatus">Update status</label>
+            <select class="input" id="nextStatus">${next.map(s => `<option value="${s}">${label(s)}</option>`).join('')}</select>
+            <button class="btn btn-primary" id="applyStatus">Update</button>
+          </div>` : `<p class="muted" style="margin-top:18px">This order is ${label(status).toLowerCase()}, so no further status changes are possible.</p>`}`;
+
+      const apply = $('#applyStatus');
+      if (apply) apply.addEventListener('click', () => changeStatus(apply));
+    }
+
+    async function changeStatus(btn) {
+      const to = $('#nextStatus').value;
+      if (to === 'CANCELLED') {
+        const ok = await confirmDialog({
+          title: 'Cancel this order?',
+          message: 'Items will return to stock and any payment will be refunded or marked failed.',
+          confirmText: 'Cancel order', cancelText: 'Keep order', danger: true,
+        });
+        if (!ok) return;
+      }
+      setLoading(btn, true);
+      try {
+        const updated = await adminApi.updateOrderStatus(current.id, to);
+        const fresh = updated && updated.status ? updated : await adminApi.order(current.id);
+        toast(`Order marked ${label(to).toLowerCase()}`, 'success');
+        renderDetail(fresh);
+        load();
+      } catch (err) {
+        setLoading(btn, false);
+        showError(err);
+      }
+    }
+
+    async function openOrder(id, fallback) {
+      try { renderDetail(await adminApi.order(id)); }
+      catch (err) {
+        if (!fallback) return showError(err);
+        renderDetail(fallback);
+      }
+      showModal(modal);
+    }
+
+    rowsEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act="view"]');
+      if (!btn) return;
+      const id = Number(btn.closest('tr').dataset.id);
+      openOrder(id, items.find(x => Number(x.id) === id));
+    });
+    modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => hideModal(modal)));
+
+    $('#fStatus').addEventListener('change', (e) => { state.status = e.target.value; state.page = 0; load(); });
+    bindPager(pagerEl, (n) => { state.page = n; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+
+    (async () => {
+      if (!initAdmin('orders', 'Orders')) return;
+      await load();
+      const open = getParam('open');
+      if (open && /^\d+$/.test(open)) openOrder(Number(open));
+    })();
+  </script>
+</body>
+</html>

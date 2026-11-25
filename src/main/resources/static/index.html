@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MilkCheck | Trusted by dairies, farms and labs</title>
+  <meta name="description" content="Farm-fresh milk, curd, butter, cheese and more, delivered to your door.">
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="site-header"></div>
+
+  <main id="main">
+    <section class="hero">
+      <div class="container hero-inner">
+        <div>
+          <span class="hero-eyebrow">Trusted by dairies, farms and labs</span>
+          <h1>Accurate milk <span>testing equipment for dairies,</span> farms & labs</h1>
+          <p>Milk analyzers, fat testers, adulteration kits and lab equipment, trusted by dairy farmers, collection centres and processing plants.</p>
+          <div class="hero-cta">
+            <a class="btn btn-primary btn-lg" href="/pages/products.html">Shop now</a>
+            <a class="btn btn-outline btn-lg" href="#categories-section">Browse categories</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="big-icon" id="heroIcon"></div>\
+          <span class="hero-chip c1"><i></i> Delivered daily</span>
+          <span class="hero-chip c2"><i></i> Quality checked</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+        <h2><center>See how your MilkCheck test works.</center></h2>
+      <div class="container feature-grid" id="features"></div>
+    </section>
+
+    <section class="section section-alt" id="categories-section">
+      <div class="container">
+        <div class="section-head">
+          <h2>Shop by category</h2>
+          <a href="/pages/products.html">View all products →</a>
+        </div>
+        <div class="category-grid" id="categories"></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <h2>Featured products</h2>
+          <a href="/pages/products.html">See more →</a>
+        </div>
+        <div class="product-grid" id="featured"></div>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+      <div class="container">
+        <div class="cta-banner">
+          <div>
+            <h2>New here? Create your account</h2>
+            <p>Track orders, save your address and check out faster.</p>
+          </div>
+          <a class="btn btn-success btn-lg" href="/pages/register.html">Get started</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { CONFIG } from '/js/config.js';
+    import { ICONS } from '/js/icons.js';
+    import { $, escapeHtml, productCard, skeletonCards, bindAddToCart } from '/js/ui.js';
+    import { catalogApi } from '/js/api.js';
+
+    $('#heroIcon').innerHTML = ICONS.milk;
+
+    const FEATURES = [
+      { icon: ICONS.milk,   title: 'Dip the Strip',   text: 'Dip it in the milk sample as shown on the bottle.' },
+      { icon: ICONS.clock,  title: 'Wait',  text: 'Use the exact wait time printed on the bottle.' },
+      { icon: ICONS.shield, title: 'Compare the colour', text: 'Match the strip directly with the chart printed on the bottle.' },
+      { icon: ICONS.pin,    title: 'Locally sourced', text: 'Supporting nearby farmers' },
+    ];
+    $('#features').innerHTML = FEATURES.map(f => `
+      <div class="feature">
+        <span class="feature-icon">${f.icon}</span>
+        <div><h3>${f.title}</h3><p>${f.text}</p></div>
+      </div>`).join('');
+
+    const errorBlock = (retryId) => `
+      <div class="empty-state" style="grid-column:1/-1">
+        <h3>Something went wrong</h3>
+        <p>We couldn't load this section.</p>
+        <button class="btn btn-outline btn-sm" id="${retryId}">Try again</button>
+      </div>`;
+
+    const catEl = $('#categories');
+    const featEl = $('#featured');
+
+    async function loadCategories() {
+      try {
+        const cats = await catalogApi.categories();
+        if (!cats.length) { $('#categories-section').hidden = true; return; }
+        catEl.innerHTML = cats.map((c, i) => `
+          <a class="category-tile fade-up" style="animation-delay:${i * 60}ms"
+             href="/pages/products.html?categoryId=${encodeURIComponent(c.id)}">
+            <span class="category-img">
+              <img src="${escapeHtml(c.imageUrl || CONFIG.PLACEHOLDER_IMG)}" alt="" loading="lazy">
+            </span>
+            <span class="category-name">${escapeHtml(c.name)}</span>
+          </a>`).join('');
+      } catch {
+        catEl.innerHTML = errorBlock('retryCats');
+        $('#retryCats').addEventListener('click', loadCategories);
+      }
+    }
+
+    async function loadFeatured() {
+      featEl.innerHTML = skeletonCards(4);
+      try {
+        const list = await catalogApi.featured();
+        if (!list.length) {
+          featEl.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><h3>No featured products yet</h3>
+            <a class="btn btn-primary btn-sm" href="/pages/products.html">Browse all products</a></div>`;
+          return;
+        }
+        featEl.innerHTML = list.map((p, i) => productCard(p, i)).join('');
+        bindAddToCart(featEl);
+      } catch {
+        featEl.innerHTML = errorBlock('retryFeat');
+        $('#retryFeat').addEventListener('click', loadFeatured);
+      }
+    }
+
+    loadCategories();
+    loadFeatured();
+  </script>
+</body>
+</html>

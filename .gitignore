@@ -1,0 +1,24 @@
+# Maven build output
+target/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# macOS
+.DS_Store
+
+# Secrets and local config
+.env
+application-local.properties
+application-local.yml
+
+# Uploaded files (if your app stores uploads locally)
+uploads/
+
+# Logs
+*.log

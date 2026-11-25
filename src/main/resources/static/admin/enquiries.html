@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Bulk Enquiries | MilkCheck Admin</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin">
+  <div class="admin-shell">
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
+    <div class="admin-main">
+      <header class="admin-top" id="adminTop"></header>
+      <main class="admin-content" id="main">
+        <div class="admin-toolbar">
+          <input class="input grow" id="fKeyword" type="search" placeholder="Search business, contact, phone, ref#…">
+          <select class="input" id="fStatus">
+            <option value="">All statuses</option>
+            <option value="NEW">New</option>
+            <option value="CONTACTED">Contacted</option>
+            <option value="QUOTED">Quoted</option>
+            <option value="CLOSED">Closed</option>
+          </select>
+        </div>
+        <p class="admin-meta" id="meta"></p>
+        <section class="panel">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Ref / Date</th>
+                  <th>Business &amp; Contact</th>
+                  <th>Products &amp; Qty</th>
+                  <th>City / Frequency</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </section>
+        <nav class="pagination" id="pager"></nav>
+      </main>
+    </div>
+  </div>
+
+  <script type="module">
+    import { $, escapeHtml, formatDateTime, debounce, toast, showError } from '/js/ui.js';
+    import { api } from '/js/api.js';
+    import { initAdmin, renderPager, bindPager } from '/js/admin-kit.js';
+
+    const state = { keyword: '', status: '', page: 0 };
+    const rowsEl = $('#rows'), metaEl = $('#meta'), pagerEl = $('#pager');
+
+    function rowHtml(e) {
+      return `
+      <tr data-id="${e.id}">
+        <td>
+          <b>${escapeHtml(e.refNumber)}</b><br>
+          <small class="muted">${formatDateTime(e.createdAt)}</small>
+        </td>
+        <td>
+          <b>${escapeHtml(e.businessName)}</b> <small class="badge badge-blue">${escapeHtml(e.businessType)}</small><br>
+          <small>${escapeHtml(e.fullName)} · <a href="tel:${escapeHtml(e.phone)}">${escapeHtml(e.phone)}</a> · <a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a></small>
+          ${e.message ? `<div style="margin-top:4px;font-size:.82rem;color:#475569">“${escapeHtml(e.message)}”</div>` : ''}
+        </td>
+        <td>
+          <b>${escapeHtml(e.estimatedQuantity)}</b><br>
+          <small class="muted">${escapeHtml(e.products)}</small>
+        </td>
+        <td>
+          <b>${escapeHtml(e.city)}</b><br>
+          <small class="muted">${escapeHtml(e.frequency)}${e.deliveryAddress ? ' · ' + escapeHtml(e.deliveryAddress) : ''}</small>
+        </td>
+        <td>
+          <select class="input status-select" data-id="${e.id}">
+            ${['NEW', 'CONTACTED', 'QUOTED', 'CLOSED'].map(s =>
+              `<option value="${s}" ${e.status === s ? 'selected' : ''}>${s}</option>`
+            ).join('')}
+          </select>
+        </td>
+      </tr>`;
+    }
+
+    async function load() {
+      rowsEl.innerHTML = `<tr><td colspan="5"><div class="skeleton" style="height:28px;margin:8px 0"></div></td></tr>`;
+      try {
+        const q = { page: state.page, size: 10 };
+        if (state.keyword.trim()) q.keyword = state.keyword.trim();
+        if (state.status) q.status = state.status;
+        const res = await api.get('/api/admin/enquiries', q);
+        const list = res.content ?? [];
+        metaEl.textContent = `${res.totalElements ?? list.length} enquiries`;
+        if (!list.length) {
+          rowsEl.innerHTML = `<tr><td colspan="5"><div class="empty-state" style="margin:20px"><h3>No bulk enquiries yet</h3></div></td></tr>`;
+          pagerEl.innerHTML = '';
+          return;
+        }
+        rowsEl.innerHTML = list.map(rowHtml).join('');
+        renderPager(pagerEl, res.page ?? state.page, res.totalPages);
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    rowsEl.addEventListener('change', async (e) => {
+      const sel = e.target.closest('.status-select');
+      if (!sel) return;
+      try {
+        await api.patch(`/api/admin/enquiries/${sel.dataset.id}/status`, { status: sel.value });
+        toast('Enquiry status updated', 'success');
+      } catch (err) {
+        showError(err);
+        load();
+      }
+    });
+
+    $('#fKeyword').addEventListener('input', debounce((e) => { state.keyword = e.target.value; state.page = 0; load(); }, 350));
+    $('#fStatus').addEventListener('change', (e) => { state.status = e.target.value; state.page = 0; load(); });
+    bindPager(pagerEl, (n) => { state.page = n; load(); });
+
+    if (initAdmin('enquiries', 'Bulk Enquiries')) load();
+  </script>
+</body>
+</html>

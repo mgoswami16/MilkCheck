@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product | MilkCheck</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="site-header"></div>
+
+  <main id="main" class="container">
+    <nav class="breadcrumb" id="crumbs" aria-label="Breadcrumb">
+      <a href="/index.html">Home</a><span class="sep">/</span>
+      <a href="/pages/products.html">Products</a>
+    </nav>
+
+    <div id="detail">
+      <div class="pd-grid">
+        <div class="skeleton" style="aspect-ratio:1/1;border-radius:24px"></div>
+        <div>
+          <div class="skeleton" style="height:22px;width:30%;margin-bottom:16px"></div>
+          <div class="skeleton" style="height:36px;width:80%;margin-bottom:16px"></div>
+          <div class="skeleton" style="height:30px;width:25%;margin-bottom:24px"></div>
+          <div class="skeleton" style="height:90px;width:100%"></div>
+        </div>
+      </div>
+    </div>
+
+    <section class="section" id="relatedSection" hidden style="padding-top:0">
+      <div class="section-head"><h2>You may also like</h2></div>
+      <div class="product-grid" id="related"></div>
+    </section>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { $, getParam, escapeHtml, formatPrice, productCard, bindAddToCart, addToCart, setLoading } from '/js/ui.js';
+    import { catalogApi } from '/js/api.js';
+    import { CONFIG } from '/js/config.js';
+
+    const detail = $('#detail');
+    const id = getParam('id');
+
+    function notFound(message = "We couldn't find that product.") {
+      document.title = 'Product not found | MilkCheck';
+      detail.innerHTML = `
+        <div class="empty-state" style="margin:48px 0">
+          <h3>Product not available</h3>
+          <p>${escapeHtml(message)}</p>
+          <a class="btn btn-primary" href="/pages/products.html">Back to products</a>
+        </div>`;
+    }
+
+    function stockInfo(stock) {
+      if (stock <= 0) return { cls: 'stock--out', text: 'Out of stock' };
+      if (stock <= 5) return { cls: 'stock--low', text: `Only ${stock} left` };
+      return { cls: 'stock--in', text: 'In stock' };
+    }
+
+    function render(p) {
+      const stock = Number(p.stock ?? p.stockQuantity ?? 0);
+      const st = stockInfo(stock);
+      const max = Math.max(1, stock);
+      document.title = `${p.name} | MilkCheck`;
+
+      // Extend breadcrumb
+      const crumbs = $('#crumbs');
+      if (p.categoryId && p.categoryName) {
+        crumbs.insertAdjacentHTML('beforeend',
+          `<span class="sep">/</span><a href="/pages/products.html?categoryId=${Number(p.categoryId)}">${escapeHtml(p.categoryName)}</a>`);
+      }
+      crumbs.insertAdjacentHTML('beforeend', `<span class="sep">/</span><span>${escapeHtml(p.name)}</span>`);
+
+      detail.innerHTML = `
+        <div class="pd-grid fade-up">
+          <div class="pd-media">
+            <img src="${escapeHtml(p.imageUrl || CONFIG.PLACEHOLDER_IMG)}" alt="${escapeHtml(p.name)}">
+          </div>
+          <div class="pd-info">
+            ${p.categoryName ? `<span class="badge badge-blue">${escapeHtml(p.categoryName)}</span>` : ''}
+            <h1>${escapeHtml(p.name)}</h1>
+            <p class="pd-price">${formatPrice(p.price)}</p>
+            <span class="${st.cls}">${st.text}</span>
+            <p class="pd-desc">${escapeHtml(p.description || 'Fresh, high-quality dairy from trusted local farms.')}</p>
+
+            <div class="pd-actions">
+              <div class="qty" role="group" aria-label="Quantity">
+                <button type="button" id="qMinus" aria-label="Decrease quantity">−</button>
+                <input id="qInput" type="number" min="1" max="${max}" value="1" inputmode="numeric" aria-label="Quantity">
+                <button type="button" id="qPlus" aria-label="Increase quantity">+</button>
+              </div>
+              <button class="btn btn-success btn-lg" id="addBtn" ${stock <= 0 ? 'disabled' : ''}>
+                ${stock <= 0 ? 'Out of stock' : 'Add to cart'}
+              </button>
+            </div>
+
+            <ul class="pd-points">
+              <li>Fresh from local farms</li>
+              <li>Quality checked before dispatch</li>
+              <li>Cash on delivery available</li>
+            </ul>
+          </div>
+        </div>`;
+
+      const input = $('#qInput'), minus = $('#qMinus'), plus = $('#qPlus'), addBtn = $('#addBtn');
+      const clamp = (v) => Math.min(max, Math.max(1, parseInt(v, 10) || 1));
+      const refresh = () => {
+        const v = clamp(input.value);
+        input.value = v;
+        minus.disabled = v <= 1 || stock <= 0;
+        plus.disabled = v >= max || stock <= 0;
+      };
+      minus.addEventListener('click', () => { input.value = clamp(input.value) - 1; refresh(); });
+      plus.addEventListener('click', () => { input.value = clamp(input.value) + 1; refresh(); });
+      input.addEventListener('change', refresh);
+      refresh();
+      if (stock <= 0) input.disabled = true;
+
+      addBtn.addEventListener('click', async () => {
+        setLoading(addBtn, true);
+        try { await addToCart(p.id, clamp(input.value), addBtn); }
+        finally { setLoading(addBtn, false); }
+      });
+    }
+
+    async function loadRelated(p) {
+      if (!p.categoryId) return;
+      try {
+        const res = await catalogApi.products({ categoryId: p.categoryId, size: 5 });
+        const items = (res.content ?? []).filter(x => x.id !== p.id).slice(0, 4);
+        if (!items.length) return;
+        $('#related').innerHTML = items.map((x, i) => productCard(x, i)).join('');
+        bindAddToCart($('#related'));
+        $('#relatedSection').hidden = false;
+      } catch { /* related items are optional */ }
+    }
+
+    (async () => {
+      if (!id || !/^\d+$/.test(id)) return notFound('The product link looks incomplete.');
+      try {
+        const p = await catalogApi.product(id);
+        render(p);
+        loadRelated(p);
+      } catch (err) {
+        notFound(err?.status === 404 ? undefined : 'Something went wrong. Please try again.');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>My Profile — MilkCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <main class="container section">
+    <div class="page-head">
+      <div>
+        <nav class="breadcrumb"><a href="/index.html">Home</a> <span>/</span> <span>My Profile</span></nav>
+        <h1>Account settings</h1>
+      </div>
+    </div>
+
+    <div class="profile-grid">
+      <form id="profileForm" class="card form-card fade-up" novalidate>
+        <h2>Personal &amp; delivery details</h2>
+        <div id="profileAlert" class="alert alert-error" hidden></div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fullName">Full name *</label>
+            <input class="input" type="text" id="fullName" name="fullName" required maxlength="100">
+          </div>
+          <div class="form-group">
+            <label for="email">Email (read-only)</label>
+            <input class="input" type="email" id="email" disabled>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="phone">Phone</label>
+            <input class="input" type="tel" id="phone" name="phone" pattern="^[0-9+\- ]{7,20}$" placeholder="9876543210">
+          </div>
+          <div class="form-group">
+            <label for="postalCode">PIN / Postal code</label>
+            <input class="input" type="text" id="postalCode" name="postalCode" maxlength="15">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="addressLine">Street address</label>
+          <input class="input" type="text" id="addressLine" name="addressLine" maxlength="255" placeholder="Flat / House no., Building, Street">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="city">City</label>
+            <input class="input" type="text" id="city" name="city" maxlength="80">
+          </div>
+          <div class="form-group">
+            <label for="state">State</label>
+            <input class="input" type="text" id="state" name="state" maxlength="80">
+          </div>
+        </div>
+
+        <button type="submit" id="saveProfileBtn" class="btn btn-primary">Save changes</button>
+      </form>
+
+      <form id="passwordForm" class="card form-card fade-up" novalidate>
+        <h2>Change password</h2>
+        <div id="pwAlert" class="alert alert-error" hidden></div>
+
+        <div class="form-group">
+          <label for="currentPassword">Current password *</label>
+          <input class="input" type="password" id="currentPassword" name="currentPassword" required autocomplete="current-password">
+        </div>
+
+        <div class="form-group">
+          <label for="newPassword">New password *</label>
+          <input class="input" type="password" id="newPassword" name="newPassword" required minlength="8" maxlength="64"
+                 autocomplete="new-password" placeholder="8+ chars, letters & numbers">
+        </div>
+
+        <div class="form-group">
+          <label for="confirmNewPassword">Confirm new password *</label>
+          <input class="input" type="password" id="confirmNewPassword" name="confirmNewPassword" required autocomplete="new-password">
+        </div>
+
+        <button type="submit" id="savePwBtn" class="btn btn-outline">Update password</button>
+      </form>
+    </div>
+  </main>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { requireLogin, saveUser } from '/js/auth.js';
+    import { userApi } from '/js/api.js';
+    import { $, toast, setLoading, clearFieldErrors, applyFieldErrors } from '/js/ui.js';
+
+    if (requireLogin()) init();
+
+    async function init() {
+      const pForm = $('#profileForm');
+      try {
+        const u = await userApi.profile();
+        pForm.fullName.value = u.fullName || '';
+        $('#email').value = u.email || '';
+        pForm.phone.value = u.phone || '';
+        pForm.addressLine.value = u.addressLine || '';
+        pForm.city.value = u.city || '';
+        pForm.state.value = u.state || '';
+        pForm.postalCode.value = u.postalCode || '';
+        saveUser(u);
+      } catch (err) {
+        toast(err.message || 'Failed to load profile', 'error');
+      }
+
+      pForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearFieldErrors(pForm);
+        const alertBox = $('#profileAlert');
+        alertBox.hidden = true;
+        const btn = $('#saveProfileBtn');
+
+        const payload = {
+          fullName: pForm.fullName.value.trim(),
+          phone: pForm.phone.value.trim() || null,
+          addressLine: pForm.addressLine.value.trim() || null,
+          city: pForm.city.value.trim() || null,
+          state: pForm.state.value.trim() || null,
+          postalCode: pForm.postalCode.value.trim() || null,
+        };
+        if (!payload.fullName) {
+          applyFieldErrors(pForm, { fullName: 'Full name is required' });
+          return;
+        }
+
+        setLoading(btn, true, 'Saving…');
+        try {
+          const updated = await userApi.update(payload);
+          saveUser(updated);
+          toast('Profile updated', 'success');
+        } catch (err) {
+          if (err.fieldErrors) applyFieldErrors(pForm, err.fieldErrors);
+          alertBox.textContent = err.message || 'Could not update profile.';
+          alertBox.hidden = false;
+        } finally {
+          setLoading(btn, false);
+        }
+      });
+
+      const pwForm = $('#passwordForm');
+      pwForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearFieldErrors(pwForm);
+        const alertBox = $('#pwAlert');
+        alertBox.hidden = true;
+        const btn = $('#savePwBtn');
+
+        const currentPassword = pwForm.currentPassword.value;
+        const newPassword = pwForm.newPassword.value;
+        const confirm = pwForm.confirmNewPassword.value;
+
+        const errs = {};
+        if (!currentPassword) errs.currentPassword = 'Required';
+        if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+          errs.newPassword = '8+ chars with letters and numbers';
+        }
+        if (newPassword !== confirm) errs.confirmNewPassword = 'Passwords do not match';
+        if (Object.keys(errs).length) {
+          applyFieldErrors(pwForm, errs);
+          return;
+        }
+
+        setLoading(btn, true, 'Updating…');
+        try {
+          await userApi.changePassword({ currentPassword, newPassword });
+          pwForm.reset();
+          toast('Password updated', 'success');
+        } catch (err) {
+          if (err.fieldErrors) applyFieldErrors(pwForm, err.fieldErrors);
+          alertBox.textContent = err.message || 'Could not change password.';
+          alertBox.hidden = false;
+        } finally {
+          setLoading(btn, false);
+        }
+      });
+    }
+  </script>
+</body>
+</html>

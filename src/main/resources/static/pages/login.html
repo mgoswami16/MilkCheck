@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in | MilkCheck</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="site-header"></div>
+
+  <main id="main" class="auth-wrap">
+    <div class="auth-card fade-up">
+      <h1>Welcome back</h1>
+      <p class="auth-sub">Log in to continue shopping.</p>
+      <div class="alert alert-info" id="notice" role="status" hidden></div>
+
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input class="input" id="email" name="email" type="email" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" id="submitBtn">Log in</button>
+      </form>
+
+      <p class="auth-foot">New to MilkCheck? <a id="regLink" href="/pages/register.html">Create an account</a></p>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { $, getParam, setLoading, showError, clearFieldErrors, applyFieldErrors } from '/js/ui.js';
+    import { authApi, ApiError } from '/js/api.js';
+    import { completeLogin, skipIfLoggedIn } from '/js/auth-flow.js';
+
+    skipIfLoggedIn();
+
+    const reason = getParam('reason');
+    if (reason) { const n = $('#notice'); n.textContent = reason; n.hidden = false; }
+
+    const redirect = getParam('redirect');
+    if (redirect) $('#regLink').href = `/pages/register.html?redirect=${encodeURIComponent(redirect)}`;
+
+    const form = $('#loginForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearFieldErrors(form);
+      const email = form.email.value.trim();
+      const password = form.password.value;
+      if (!email || !password) return showError(new Error('Please enter your email and password.'));
+
+      const btn = $('#submitBtn');
+      setLoading(btn, true);
+      try {
+        completeLogin(await authApi.login({ email, password }));
+      } catch (err) {
+        setLoading(btn, false);
+        if (err instanceof ApiError && err.fieldErrors && Object.keys(err.fieldErrors).length) applyFieldErrors(form, err.fieldErrors);
+        else showError(err);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Customers | MilkCheck Admin</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin">
+  <div class="admin-shell">
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
+    <div class="admin-main">
+      <header class="admin-top" id="adminTop"></header>
+      <main class="admin-content" id="main">
+        <div class="admin-toolbar">
+          <input class="input grow" id="fKeyword" type="search" placeholder="Search by name, email or phone…" aria-label="Search customers">
+        </div>
+        <p class="admin-meta" id="meta" aria-live="polite"></p>
+        <section class="panel">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th class="num">Orders</th><th>Status</th><th></th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </section>
+        <nav class="pagination" id="pager" aria-label="Pagination"></nav>
+      </main>
+    </div>
+  </div>
+
+  <script type="module">
+    import { $, escapeHtml, formatDate, debounce, setLoading, showError, toast } from '/js/ui.js';
+    import { adminApi } from '/js/api.js';
+    import { initAdmin, confirmDialog, renderPager, bindPager } from '/js/admin-kit.js';
+
+    const SIZE = 10;
+    const state = { keyword: '', page: 0 };
+    let items = [], reqId = 0;
+
+    const rowsEl = $('#rows'), metaEl = $('#meta'), pagerEl = $('#pager');
+    const isEnabled = (c) => (c.enabled ?? c.active ?? true) !== false;
+
+    function rowHtml(c) {
+      const on = isEnabled(c);
+      const orders = c.orderCount ?? c.totalOrders ?? c.ordersCount;
+      return `
+      <tr data-id="${Number(c.id)}" class="${on ? '' : 'is-inactive'}">
+        <td><b style="color:var(--navy)">${escapeHtml(c.name ?? '—')}</b></td>
+        <td>${escapeHtml(c.email ?? '—')}</td>
+        <td>${escapeHtml(c.phone || '—')}</td>
+        <td>${c.createdAt ? formatDate(c.createdAt) : '—'}</td>
+        <td class="num">${orders ?? '—'}</td>
+        <td><span class="status ${on ? 'status-active' : 'status-inactive'}">${on ? 'Active' : 'Disabled'}</span></td>
+        <td class="row-actions">
+          <button class="btn btn-sm ${on ? 'btn-outline' : 'btn-success'}" data-act="toggle">${on ? 'Disable' : 'Enable'}</button>
+        </td>
+      </tr>`;
+    }
+
+    async function load() {
+      const my = ++reqId;
+      rowsEl.innerHTML = `<tr><td colspan="7"><div class="skeleton" style="height:22px;margin:8px 0"></div><div class="skeleton" style="height:22px;margin:8px 0"></div><div class="skeleton" style="height:22px;margin:8px 0"></div></td></tr>`;
+      pagerEl.innerHTML = '';
+      try {
+        const q = { page: state.page, size: SIZE };
+        if (state.keyword.trim()) q.keyword = state.keyword.trim();
+        const res = await adminApi.customers(q);
+        if (my !== reqId) return;
+
+        items = res.content ?? [];
+        if (!items.length && state.page > 0) { state.page -= 1; return load(); }
+
+        const total = res.totalElements ?? items.length;
+        metaEl.textContent = total === 1 ? '1 customer' : `${total} customers`;
+        if (!items.length) {
+          rowsEl.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="margin:20px"><h3>No customers found</h3></div></td></tr>`;
+          return;
+        }
+        rowsEl.innerHTML = items.map(rowHtml).join('');
+        renderPager(pagerEl, res.page ?? state.page, res.totalPages);
+      } catch (err) {
+        if (my !== reqId) return;
+        metaEl.textContent = '';
+        rowsEl.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="margin:20px"><h3>Couldn't load customers</h3>
+          <p>${escapeHtml(err?.message || 'Please try again.')}</p>
+          <button class="btn btn-outline btn-sm" id="retry">Try again</button></div></td></tr>`;
+        $('#retry').addEventListener('click', load);
+      }
+    }
+
+    rowsEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act="toggle"]');
+      if (!btn) return;
+      const id = Number(btn.closest('tr').dataset.id);
+      const c = items.find(x => Number(x.id) === id);
+      if (!c) return;
+      const on = isEnabled(c);
+
+      if (on) {
+        const ok = await confirmDialog({
+          title: `Disable ${c.name || 'this customer'}?`,
+          message: 'They will be blocked from logging in until you enable the account again. Their order history is kept.',
+          confirmText: 'Disable', danger: true,
+        });
+        if (!ok) return;
+      }
+      setLoading(btn, true);
+      try {
+        await adminApi.setCustomerStatus(id, !on);
+        toast(on ? 'Customer disabled' : 'Customer enabled', 'success');
+        load();
+      } catch (err) { setLoading(btn, false); showError(err); }
+    });
+
+    $('#fKeyword').addEventListener('input', debounce((e) => { state.keyword = e.target.value; state.page = 0; load(); }, 350));
+    bindPager(pagerEl, (n) => { state.page = n; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+
+    if (initAdmin('customers', 'Customers')) load();
+  </script>
+</body>
+</html>

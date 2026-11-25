@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Admin login | MilkCheck</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin">
+  <main class="admin-login">
+    <div class="admin-login-card fade-up">
+      <img src="/images/logo.svg" alt="MilkCheck" width="48" height="48">
+      <h1>Admin sign in</h1>
+      <p class="sub">Restricted area. Authorised staff only.</p>
+      <div class="alert alert-info" id="notice" role="status" hidden></div>
+
+      <form id="adminLoginForm" novalidate>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input class="input" id="email" name="email" type="email" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" id="submitBtn">Sign in</button>
+      </form>
+      <a class="back" href="/index.html">← Back to store</a>
+    </div>
+  </main>
+
+  <script type="module">
+    import { $, getParam, setLoading, showError, clearFieldErrors, applyFieldErrors } from '/js/ui.js';
+    import { authApi, ApiError } from '/js/api.js';
+    import { saveSession, clearSession, isLoggedIn, isAdmin } from '/js/auth.js';
+
+    // Only same-site /admin/ paths are allowed as a post-login destination.
+    function destination() {
+      const r = getParam('redirect');
+      const ok = r && /^\/admin\/[A-Za-z0-9_\-./?=&%]*$/.test(r) && !r.includes('..');
+      return ok ? r : '/admin/dashboard.html';
+    }
+
+    if (isLoggedIn() && isAdmin()) location.replace(destination());
+
+    const reason = getParam('reason');
+    if (reason) { const n = $('#notice'); n.textContent = reason; n.hidden = false; }
+
+    const form = $('#adminLoginForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearFieldErrors(form);
+      const email = form.email.value.trim();
+      const password = form.password.value;
+      if (!email || !password) return showError(new Error('Please enter your email and password.'));
+
+      const btn = $('#submitBtn');
+      setLoading(btn, true);
+      try {
+        const { token, user, ...rest } = await authApi.adminLogin({ email, password });
+        saveSession({ token, user: user ?? rest });
+        if (!isAdmin()) {
+          clearSession();
+          throw new Error('This account does not have admin access.');
+        }
+        location.href = destination();
+      } catch (err) {
+        setLoading(btn, false);
+        if (err instanceof ApiError && err.fieldErrors && Object.keys(err.fieldErrors).length) applyFieldErrors(form, err.fieldErrors);
+        else showError(err);
+      }
+    });
+  </script>
+</body>
+</html>

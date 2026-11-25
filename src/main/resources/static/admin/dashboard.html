@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Dashboard | MilkCheck Admin</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin">
+  <div class="admin-shell">
+    <aside class="admin-sidebar" id="adminSidebar"></aside>
+    <div class="admin-main">
+      <header class="admin-top" id="adminTop"></header>
+      <main class="admin-content" id="main">
+        <div id="dash">
+          <div class="stat-grid">
+            <div class="skeleton" style="height:92px;border-radius:18px"></div>
+            <div class="skeleton" style="height:92px;border-radius:18px"></div>
+            <div class="skeleton" style="height:92px;border-radius:18px"></div>
+            <div class="skeleton" style="height:92px;border-radius:18px"></div>
+          </div>
+          <div class="skeleton" style="height:260px;border-radius:18px"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module">
+    import { $, escapeHtml, formatPrice, formatDateTime } from '/js/ui.js';
+    import { adminApi } from '/js/api.js';
+    import { ICONS } from '/js/icons.js';
+    import { initAdmin, statusBadge, label, orderCustomer, orderTotal, orderRef } from '/js/admin-kit.js';
+
+    const root = $('#dash');
+    const pick = (...v) => Number(v.find(x => x != null) ?? 0);
+
+    function statusEntries(d) {
+      const src = d.ordersByStatus ?? d.statusCounts ?? d.orderStatusCounts;
+      if (!src) return [];
+      if (Array.isArray(src)) return src.map(x => [String(x.status).toUpperCase(), Number(x.count ?? 0)]);
+      return Object.entries(src).map(([k, v]) => [k.toUpperCase(), Number(v)]);
+    }
+
+    function statCard(icon, name, value, hint = '') {
+      return `<div class="stat-card"><span class="stat-icon">${icon}</span>
+        <div><p>${name}</p><strong>${value}</strong>${hint}</div></div>`;
+    }
+
+    function ordersTable(orders) {
+      if (!orders.length) return `<div class="empty-state" style="margin:20px"><h3>No orders yet</h3></div>`;
+      return `<div class="table-wrap"><table class="table">
+        <thead><tr><th>Order</th><th>Customer</th><th>Date</th><th class="num">Total</th><th>Status</th></tr></thead>
+        <tbody>${orders.map(o => `
+          <tr>
+            <td><a class="link-btn" href="/admin/orders.html?open=${Number(o.id)}">#${escapeHtml(orderRef(o))}</a></td>
+            <td>${escapeHtml(orderCustomer(o))}</td>
+            <td>${o.createdAt ?? o.orderDate ? formatDateTime(o.createdAt ?? o.orderDate) : '—'}</td>
+            <td class="num">${formatPrice(orderTotal(o))}</td>
+            <td>${statusBadge(o.status)}</td>
+          </tr>`).join('')}</tbody></table></div>`;
+    }
+
+    function statusPanel(entries) {
+      if (!entries.length) return '';
+      const max = Math.max(1, ...entries.map(e => e[1]));
+      return `<section class="panel"><div class="panel-head"><h2>Orders by status</h2></div>
+        <div class="panel-body">${entries.map(([s, n]) => `
+          <div class="bar-row"><span>${label(s)}</span>
+            <div class="bar-track"><div class="bar-fill ${s === 'DELIVERED' ? 'good' : s === 'CANCELLED' ? 'bad' : ''}" style="width:${(n / max) * 100}%"></div></div>
+            <b>${n}</b></div>`).join('')}
+        </div></section>`;
+    }
+
+    async function load() {
+      try {
+        const d = await adminApi.dashboard();
+        let recent = d.recentOrders;
+        if (!Array.isArray(recent)) {
+          try { recent = (await adminApi.orders({ page: 0, size: 5 })).content ?? []; }
+          catch { recent = []; }
+        }
+        const pending = d.pendingOrders ?? d.pending;
+
+        root.innerHTML = `
+          <div class="stat-grid fade-up">
+            ${statCard(ICONS.cart, 'Revenue', formatPrice(pick(d.totalRevenue, d.revenue)))}
+            ${statCard(ICONS.orders, 'Orders', pick(d.totalOrders, d.orders).toLocaleString(),
+                pending != null ? `<small>${Number(pending)} pending</small>` : '')}
+            ${statCard(ICONS.user, 'Customers', pick(d.totalCustomers, d.customers).toLocaleString())}
+            ${statCard(ICONS.milk, 'Products', pick(d.totalProducts, d.products).toLocaleString())}
+          </div>
+          <div class="dash-grid">
+            <section class="panel fade-up">
+              <div class="panel-head"><h2>Recent orders</h2><a href="/admin/orders.html">View all →</a></div>
+              ${ordersTable(recent)}
+            </section>
+            <div>
+              ${statusPanel(statusEntries(d))}
+              <section class="panel">
+                <div class="panel-head"><h2>Quick actions</h2></div>
+                <div class="panel-body quick">
+                  <a class="btn btn-primary" href="/admin/products.html?new=1">Add a product</a>
+                  <a class="btn btn-outline" href="/admin/orders.html">Manage orders</a>
+                  <a class="btn btn-outline" href="/admin/customers.html">View customers</a>
+                </div>
+              </section>
+            </div>
+          </div>`;
+      } catch (err) {
+        root.innerHTML = `<div class="empty-state"><h3>Couldn't load the dashboard</h3>
+          <p>${escapeHtml(err?.message || 'Please try again.')}</p>
+          <button class="btn btn-outline btn-sm" id="retry">Try again</button></div>`;
+        $('#retry').addEventListener('click', load);
+      }
+    }
+
+    if (initAdmin('dashboard', 'Dashboard')) load();
+  </script>
+</body>
+</html>

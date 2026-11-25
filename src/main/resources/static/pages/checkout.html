@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Checkout — MilkCheck</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <style>
+    .checkout-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+      gap: 1.75rem;
+      align-items: start;
+    }
+    .checkout-card {
+      padding: 2rem;
+    }
+    .checkout-card h2 {
+      font-size: 1.15rem;
+      color: var(--navy, #0D3B73);
+      margin: 0 0 1rem;
+    }
+    .pay-options {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .pay-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.9rem;
+      padding: 1rem 1.15rem;
+      border: 1.5px solid #dbe7f3;
+      border-radius: 12px;
+      background: #fff;
+      cursor: pointer;
+      transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+    }
+    .pay-option:hover {
+      border-color: #90caf9;
+      background: #f8fbff;
+    }
+    .pay-option:has(input:checked) {
+      border-color: var(--blue-600, #1976D2);
+      background: var(--blue-50, #E3F2FD);
+      box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.12);
+    }
+    .pay-option input[type="radio"] {
+      appearance: auto;
+      -webkit-appearance: radio;
+      width: 18px;
+      height: 18px;
+      margin-top: 3px;
+      accent-color: var(--blue-600, #1976D2);
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .pay-option-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .pay-option-body strong {
+      font-size: 0.96rem;
+      color: var(--navy, #0D3B73);
+    }
+    .pay-option-body span {
+      font-size: 0.84rem;
+      color: #64748b;
+    }
+    .summary-card {
+      padding: 1.75rem;
+      position: sticky;
+      top: calc(var(--header-h, 72px) + 1rem);
+    }
+    .summary-card h2 {
+      font-size: 1.15rem;
+      color: var(--navy, #0D3B73);
+      margin: 0 0 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #e6eff8;
+    }
+    .mini-items {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem;
+      display: grid;
+      gap: 0.85rem;
+    }
+    .mini-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      font-size: 0.92rem;
+    }
+    .mini-item-left {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      min-width: 0;
+    }
+    .mini-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      object-fit: cover;
+      background: #E3F2FD;
+      flex-shrink: 0;
+    }
+    .mini-title {
+      font-weight: 500;
+      color: #1e293b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-meta {
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.55rem 0;
+      font-size: 0.93rem;
+      color: #475569;
+    }
+    .summary-total {
+      margin-top: 0.5rem;
+      padding-top: 0.9rem;
+      border-top: 1.5px solid #dbe7f3;
+      font-size: 1.1rem;
+      color: var(--navy, #0D3B73);
+    }
+    .summary-note {
+      margin-top: 1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 10px;
+      background: #f0fdf4;
+      color: #166534;
+      font-size: 0.82rem;
+    }
+    @media (max-width: 880px) {
+      .checkout-grid {
+        grid-template-columns: 1fr;
+      }
+      .summary-card {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main id="main" class="container section">
+    <div class="page-head">
+      <div>
+        <nav class="breadcrumb">
+          <a href="/index.html">Home</a> <span>/</span>
+          <a href="/pages/cart.html">Cart</a> <span>/</span>
+          <span>Checkout</span>
+        </nav>
+        <h1>Checkout</h1>
+      </div>
+    </div>
+
+    <div id="checkoutRoot" class="checkout-grid">
+      <div class="skeleton" style="height:360px"></div>
+      <div class="skeleton" style="height:260px"></div>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { CONFIG } from '/js/config.js';
+    import { requireLogin } from '/js/auth.js';
+    import { cartApi, userApi, orderApi } from '/js/api.js';
+    import { $, escapeHtml, formatPrice, toast, setLoading, clearFieldErrors, applyFieldErrors, setCartBadge } from '/js/ui.js';
+    import { normalizeCart } from '/js/cart-model.js';
+
+    if (requireLogin()) init();
+
+    async function init() {
+      const root = $('#checkoutRoot');
+      try {
+        const [rawCart, user] = await Promise.all([
+          cartApi.get(),
+          userApi.profile().catch(() => ({})),
+        ]);
+        const cart = normalizeCart(rawCart);
+        if (!cart.items.length) {
+          window.location.replace('/pages/cart.html');
+          return;
+        }
+        render(root, cart, user || {});
+      } catch (err) {
+        root.innerHTML = `<div class="card checkout-card"><p class="alert alert-error">${escapeHtml(err.message || 'Failed to load checkout.')}</p></div>`;
+      }
+    }
+
+    function buildDefaultAddress(u) {
+      return [u.addressLine, u.city, u.state, u.postalCode].filter(Boolean).join(', ');
+    }
+
+    function render(root, cart, user) {
+      const defaultAddr = buildDefaultAddress(user);
+      root.innerHTML = `
+        <form id="checkoutForm" class="card checkout-card fade-up" novalidate>
+          <h2>Delivery details</h2>
+          <div id="checkoutAlert" class="alert alert-error" hidden></div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="deliveringTo">Delivering to</label>
+              <input class="input" id="deliveringTo" type="text" value="${escapeHtml(user.fullName || '')}" disabled>
+            </div>
+            <div class="form-group">
+              <label for="contactPhone">Contact phone *</label>
+              <input class="input" type="tel" id="contactPhone" name="contactPhone" required
+                     pattern="^[0-9+\\- ]{7,20}$" value="${escapeHtml(user.phone || '')}" placeholder="9876543210">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="shippingAddress">Shipping address *</label>
+            <textarea class="input" id="shippingAddress" name="shippingAddress" rows="3" required maxlength="500"
+                      placeholder="House / Flat, Street, Area, City, PIN">${escapeHtml(defaultAddr)}</textarea>
+          </div>
+
+          <h2 style="margin-top:1.5rem">Payment method</h2>
+          <div class="pay-options">
+            <label class="pay-option">
+              <input type="radio" name="paymentMethod" value="COD" checked>
+              <div class="pay-option-body">
+                <strong>Cash on Delivery (COD)</strong>
+                <span>Pay in cash or UPI at the doorstep when your order arrives</span>
+              </div>
+            </label>
+            <label class="pay-option">
+              <input type="radio" name="paymentMethod" value="UPI">
+              <div class="pay-option-body">
+                <strong>UPI (Instant)</strong>
+                <span>Simulated instant UPI confirmation (GPay / PhonePe / Paytm)</span>
+              </div>
+            </label>
+            <label class="pay-option">
+              <input type="radio" name="paymentMethod" value="CARD">
+              <div class="pay-option-body">
+                <strong>Debit / Credit Card</strong>
+                <span>Simulated Visa / Mastercard / RuPay card payment</span>
+              </div>
+            </label>
+          </div>
+
+          <button type="submit" id="placeOrderBtn" class="btn btn-primary btn-block" style="margin-top:1.5rem">
+            Place order · ${formatPrice(cart.total)}
+          </button>
+        </form>
+
+        <aside class="card summary-card fade-up">
+          <h2>Order summary (${cart.count} ${cart.count === 1 ? 'item' : 'items'})</h2>
+          <ul class="mini-items">
+            ${cart.items.map((it) => `
+              <li class="mini-item">
+                <div class="mini-item-left">
+                  <img class="mini-thumb" src="${escapeHtml(it.imageUrl || CONFIG.PLACEHOLDER_IMG)}" alt="">
+                  <div>
+                    <div class="mini-title">${escapeHtml(it.name)}</div>
+                    <div class="mini-meta">Qty ${it.qty} × ${formatPrice(it.price)}</div>
+                  </div>
+                </div>
+                <strong>${formatPrice(it.subtotal)}</strong>
+              </li>`).join('')}
+          </ul>
+          <div class="summary-row"><span>Subtotal</span><span>${formatPrice(cart.total)}</span></div>
+          <div class="summary-row"><span>Morning Delivery</span><span class="badge badge-green">FREE</span></div>
+          <div class="summary-row summary-total"><span>Total Payable</span><strong>${formatPrice(cart.total)}</strong></div>
+          <div class="summary-note">✓ Chilled farm-fresh dispatch between 5:30 AM – 7:30 AM.</div>
+        </aside>`;
+
+      const form = $('#checkoutForm');
+      const btn = $('#placeOrderBtn');
+      const alertBox = $('#checkoutAlert');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearFieldErrors(form);
+        alertBox.hidden = true;
+
+        const shippingAddress = form.shippingAddress.value.trim();
+        const contactPhone = form.contactPhone.value.trim();
+        const paymentMethod = form.paymentMethod.value;
+
+        const errs = {};
+        if (!shippingAddress) errs.shippingAddress = 'Shipping address is required';
+        if (!contactPhone) errs.contactPhone = 'Contact phone is required';
+        if (Object.keys(errs).length) {
+          applyFieldErrors(form, errs);
+          return;
+        }
+
+        setLoading(btn, true, 'Placing order…');
+        try {
+          const order = await orderApi.checkout({ shippingAddress, contactPhone, paymentMethod });
+          setCartBadge(0);
+          toast('Order placed!', 'success');
+          window.location.replace(`/pages/orders.html?placed=${encodeURIComponent(order.orderNumber || order.id)}`);
+        } catch (err) {
+          if (err.fieldErrors) applyFieldErrors(form, err.fieldErrors);
+          alertBox.textContent = err.message || 'Could not place order.';
+          alertBox.hidden = false;
+        } finally {
+          setLoading(btn, false);
+        }
+      });
+    }
+  </script>
+</body>
+</html>

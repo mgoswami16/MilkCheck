@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Create Account — MilkCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <main class="section auth-wrap">
+    <div class="card form-card auth-card fade-up">
+      <div class="auth-head">
+        <span class="badge badge-blue">Fresh every morning</span>
+        <h1>Create your account</h1>
+        <p class="muted">Join MilkCheck for farm-fresh dairy delivered to your door.</p>
+      </div>
+
+      <div id="formAlert" class="alert alert-error" hidden></div>
+
+      <form id="registerForm" novalidate>
+        <div class="form-group">
+          <label for="fullName">Full name *</label>
+          <input class="input" type="text" id="fullName" name="fullName" required maxlength="100"
+                 autocomplete="name" placeholder="Alex Sharma">
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email address *</label>
+          <input class="input" type="email" id="email" name="email" required maxlength="150"
+                 autocomplete="email" placeholder="you@example.com">
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone number</label>
+          <input class="input" type="tel" id="phone" name="phone"
+                 pattern="^[0-9+\- ]{7,20}$" autocomplete="tel" placeholder="9876543210">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="password">Password *</label>
+            <input class="input" type="password" id="password" name="password" required minlength="8" maxlength="64"
+                   autocomplete="new-password" placeholder="8+ chars, letters & numbers">
+          </div>
+          <div class="form-group">
+            <label for="confirmPassword">Confirm password *</label>
+            <input class="input" type="password" id="confirmPassword" name="confirmPassword" required
+                   autocomplete="new-password" placeholder="Repeat password">
+          </div>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn btn-primary btn-block">Create account</button>
+      </form>
+
+      <p class="auth-switch">
+        Already have an account? <a id="loginLink" href="/pages/login.html">Sign in</a>
+      </p>
+    </div>
+  </main>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { authApi } from '/js/api.js';
+    import { $, getParam, toast, setLoading, clearFieldErrors, applyFieldErrors } from '/js/ui.js';
+    import { skipIfLoggedIn, completeLogin, destination } from '/js/auth-flow.js';
+
+    if (!skipIfLoggedIn()) {
+      const redirect = getParam('redirect');
+      if (redirect) $('#loginLink').href = `/pages/login.html?redirect=${encodeURIComponent(redirect)}`;
+
+      const form = $('#registerForm');
+      const alertBox = $('#formAlert');
+      const btn = $('#submitBtn');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearFieldErrors(form);
+        alertBox.hidden = true;
+
+        const fullName = form.fullName.value.trim();
+        const email = form.email.value.trim();
+        const phone = form.phone.value.trim();
+        const password = form.password.value;
+        const confirm = form.confirmPassword.value;
+
+        const localErrors = {};
+        if (!fullName) localErrors.fullName = 'Full name is required';
+        if (!email) localErrors.email = 'Email is required';
+        if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+          localErrors.password = 'Password must be 8+ characters with letters and numbers';
+        }
+        if (password !== confirm) localErrors.confirmPassword = 'Passwords do not match';
+
+        if (Object.keys(localErrors).length) {
+          applyFieldErrors(form, localErrors);
+          return;
+        }
+
+        const payload = { fullName, email, password };
+        if (phone) payload.phone = phone;
+
+        setLoading(btn, true, 'Creating account…');
+        try {
+          const res = await authApi.register(payload);
+          completeLogin(res);
+          toast('Welcome to MilkCheck!', 'success');
+          window.location.replace(destination());
+        } catch (err) {
+          if (err.fieldErrors) applyFieldErrors(form, err.fieldErrors);
+          alertBox.textContent = err.message || 'Could not create account.';
+          alertBox.hidden = false;
+        } finally {
+          setLoading(btn, false);
+        }
+      });
+    }
+  </script>
+</body>
+</html>

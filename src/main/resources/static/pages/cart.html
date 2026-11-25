@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your cart | MilkCheck</title>
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div id="site-header"></div>
+
+  <main id="main" class="container">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/index.html">Home</a><span class="sep">/</span><span>Cart</span>
+    </nav>
+    <div class="page-head"><h1>Your cart</h1></div>
+    <div id="cartRoot">
+      <div class="skeleton" style="height:120px;border-radius:18px;margin-bottom:14px"></div>
+      <div class="skeleton" style="height:120px;border-radius:18px"></div>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script type="module">
+    import '/js/layout.js';
+    import { $, escapeHtml, formatPrice, setCartBadge, showError, toast } from '/js/ui.js';
+    import { cartApi } from '/js/api.js';
+    import { isLoggedIn, redirectToLogin } from '/js/auth.js';
+    import { CONFIG } from '/js/config.js';
+    import { normalizeCart } from '/js/cart-model.js';
+
+    const root = $('#cartRoot');
+    let cart = { items: [], total: 0, count: 0 };
+    let busy = false;
+
+    const emptyBlock = (title, text, btn) => `
+      <div class="empty-state" style="margin:24px 0 64px">
+        <h3>${title}</h3><p>${text}</p>${btn}
+      </div>`;
+
+    function render() {
+      setCartBadge(cart.count);
+      if (!cart.items.length) {
+        root.innerHTML = emptyBlock('Your cart is empty', 'Add some fresh dairy to get started.',
+          '<a class="btn btn-primary" href="/pages/products.html">Browse products</a>');
+        return;
+      }
+      root.innerHTML = `
+        <div class="cart-layout fade-up">
+          <div>
+            <div class="cart-list">
+              ${cart.items.map(i => {
+                const max = i.stock && i.stock > 0 ? i.stock : 99;
+                return `
+                <article class="cart-item" data-item="${Number(i.id)}">
+                  <a class="cart-thumb" href="/pages/product.html?id=${Number(i.productId)}">
+                    <img src="${escapeHtml(i.imageUrl || CONFIG.PLACEHOLDER_IMG)}" alt="" loading="lazy">
+                  </a>
+                  <div>
+                    <a class="cart-name" href="/pages/product.html?id=${Number(i.productId)}">${escapeHtml(i.name)}</a>
+                    <span class="cart-unit">${formatPrice(i.price)} each</span>
+                    <button class="link-danger" data-act="remove">Remove</button>
+                  </div>
+                  <div class="qty sm" role="group" aria-label="Quantity for ${escapeHtml(i.name)}">
+                    <button type="button" data-act="minus" aria-label="Decrease" ${i.qty <= 1 ? 'disabled' : ''}>−</button>
+                    <input type="number" min="1" max="${max}" value="${i.qty}" data-act="qty" aria-label="Quantity">
+                    <button type="button" data-act="plus" aria-label="Increase" ${i.qty >= max ? 'disabled' : ''}>+</button>
+                  </div>
+                  <div class="cart-sub">${formatPrice(i.subtotal)}</div>
+                </article>`;
+              }).join('')}
+            </div>
+            <div class="cart-tools">
+              <a href="/pages/products.html" style="color:var(--blue-600);font-weight:600;font-size:.9rem">← Continue shopping</a>
+              <button class="btn btn-ghost btn-sm" data-act="clear">Clear cart</button>
+            </div>
+          </div>
+          <aside class="summary-card">
+            <h2>Order summary</h2>
+            <div class="summary-row"><span>Items (${cart.count})</span><span>${formatPrice(cart.total)}</span></div>
+            <div class="summary-row summary-total"><span>Total</span><span>${formatPrice(cart.total)}</span></div>
+            <a class="btn btn-primary btn-block btn-lg" href="/pages/checkout.html">Proceed to checkout</a>
+          </aside>
+        </div>`;
+    }
+
+    async function refresh() {
+      cart = normalizeCart(await cartApi.get());
+      render();
+    }
+
+    async function run(task) {
+      if (busy) return;
+      busy = true;
+      root.classList.add('is-busy');
+      try { await task(); await refresh(); }
+      catch (err) { showError(err); try { await refresh(); } catch { /* keep current view */ } }
+      finally { busy = false; root.classList.remove('is-busy'); }
+    }
+
+    const itemOf = (el) => el.closest('[data-item]');
+    const find = (id) => cart.items.find(i => i.id === id);
+
+    root.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn || btn.tagName === 'INPUT') return;
+      const act = btn.dataset.act;
+      if (act === 'clear') return run(async () => { await cartApi.clear(); toast('Cart cleared', 'success'); });
+      const row = itemOf(btn); if (!row) return;
+      const item = find(Number(row.dataset.item)); if (!item) return;
+      if (act === 'remove') return run(async () => { await cartApi.remove(item.id); toast('Item removed', 'success'); });
+      if (act === 'minus') return run(() => cartApi.update(item.id, item.qty - 1));
+      if (act === 'plus') return run(() => cartApi.update(item.id, item.qty + 1));
+    });
+
+    root.addEventListener('change', (e) => {
+      if (e.target.dataset.act !== 'qty') return;
+      const row = itemOf(e.target); if (!row) return;
+      const item = find(Number(row.dataset.item)); if (!item) return;
+      const max = item.stock && item.stock > 0 ? item.stock : 99;
+      const qty = Math.min(max, Math.max(1, parseInt(e.target.value, 10) || 1));
+      if (qty === item.qty) { e.target.value = qty; return; }
+      run(() => cartApi.update(item.id, qty));
+    });
+
+    (async () => {
+      if (!isLoggedIn()) {
+        root.innerHTML = emptyBlock('Log in to see your cart', 'Your cart is saved to your account.',
+          `<a class="btn btn-primary" href="/pages/login.html?redirect=${encodeURIComponent('/pages/cart.html')}">Log in</a>`);
+        return;
+      }
+      try { await refresh(); }
+      catch (err) {
+        root.innerHTML = emptyBlock('Couldn\'t load your cart', 'Please try again.',
+          '<button class="btn btn-outline btn-sm" onclick="location.reload()">Try again</button>');
+      }
+    })();
+  </script>
+</body>
+</html>
