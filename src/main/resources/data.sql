@@ -4,7 +4,7 @@ INSERT IGNORE INTO roles (name) VALUES ('ROLE_CUSTOMER'), ('ROLE_ADMIN');
 -- Categories
 INSERT IGNORE INTO categories (name, description, image_url) VALUES
 ('Milk',           'Fresh farm milk in every variety',        '/images/categories/milk.jpg'),
-('Butter & Ghee',  'Rich, creamy butter and pure ghee',       '/images/categories/butter.jpg'),;
+('Butter & Ghee',  'Rich, creamy butter and pure ghee',       '/images/categories/butter.jpg');
 
 -- Products
 INSERT IGNORE INTO products (name, description, price, stock_quantity, image_url, unit, featured, active, category_id) VALUES
